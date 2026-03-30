@@ -15,17 +15,15 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: BatteryAdapter
-    private val batteries = mutableListOf<BatteryData>()
+    private val batteries = mutableMapOf<String, BatteryData>()
+    private val clients = mutableMapOf<String, BatteryClient>()
     
     private val bluetoothAdapter: BluetoothAdapter? by lazy {
         val bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
@@ -39,15 +37,27 @@ class MainActivity : AppCompatActivity() {
             
             // Check if it's a Wattcycle device
             if (WattcycleProtocol.DEVICE_NAME_PREFIXES.any { deviceName.startsWith(it) }) {
-                val existing = batteries.find { it.address == device.address }
-                if (existing == null) {
-                    batteries.add(BatteryData(
+                val address = device.address
+                
+                if (!batteries.containsKey(address)) {
+                    // Add new battery
+                    batteries[address] = BatteryData(
                         name = deviceName,
-                        address = device.address
-                    ))
+                        address = address
+                    )
                     runOnUiThread {
-                        adapter.notifyDataSetChanged()
+                        adapter.updateBatteries(batteries.values.toList())
                     }
+                    
+                    // Connect to battery
+                    val client = BatteryClient(this@MainActivity, device) { updatedData ->
+                        batteries[address] = updatedData
+                        runOnUiThread {
+                            adapter.updateBatteries(batteries.values.toList())
+                        }
+                    }
+                    clients[address] = client
+                    client.connect()
                 }
             }
         }
@@ -59,7 +69,7 @@ class MainActivity : AppCompatActivity() {
         
         recyclerView = findViewById(R.id.batteryList)
         recyclerView.layoutManager = LinearLayoutManager(this)
-        adapter = BatteryAdapter(batteries)
+        adapter = BatteryAdapter()
         recyclerView.adapter = adapter
         
         checkPermissions()
@@ -101,26 +111,23 @@ class MainActivity : AppCompatActivity() {
     
     private fun startScanning() {
         bluetoothAdapter?.bluetoothLeScanner?.startScan(scanCallback)
-        
-        // Continuous scanning with periodic updates
-        lifecycleScope.launch {
-            while (true) {
-                delay(5000)
-                runOnUiThread {
-                    adapter.notifyDataSetChanged()
-                }
-            }
-        }
     }
     
     override fun onDestroy() {
         super.onDestroy()
         bluetoothAdapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        clients.values.forEach { it.disconnect() }
     }
 }
 
-class BatteryAdapter(private val batteries: List<BatteryData>) : 
-    RecyclerView.Adapter<BatteryAdapter.BatteryViewHolder>() {
+class BatteryAdapter : RecyclerView.Adapter<BatteryAdapter.BatteryViewHolder>() {
+    
+    private var batteries: List<BatteryData> = emptyList()
+    
+    fun updateBatteries(newBatteries: List<BatteryData>) {
+        batteries = newBatteries
+        notifyDataSetChanged()
+    }
     
     class BatteryViewHolder(view: View) : RecyclerView.ViewHolder(view) {
         val nameText: TextView = view.findViewById(R.id.batteryName)
@@ -128,6 +135,9 @@ class BatteryAdapter(private val batteries: List<BatteryData>) :
         val socText: TextView = view.findViewById(R.id.batterySoc)
         val voltageText: TextView = view.findViewById(R.id.batteryVoltage)
         val currentText: TextView = view.findViewById(R.id.batteryCurrent)
+        val capacityText: TextView = view.findViewById(R.id.batteryCapacity)
+        val tempText: TextView = view.findViewById(R.id.batteryTemp)
+        val statusText: TextView = view.findViewById(R.id.batteryStatus)
     }
     
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): BatteryViewHolder {
@@ -143,6 +153,9 @@ class BatteryAdapter(private val batteries: List<BatteryData>) :
         holder.socText.text = "SoC: ${battery.soc}%"
         holder.voltageText.text = "%.2f V".format(battery.voltage)
         holder.currentText.text = "%.1f A".format(battery.current)
+        holder.capacityText.text = "%.1f / %.1f Ah".format(battery.remainingCapacity, battery.totalCapacity)
+        holder.tempText.text = "%.1f °C".format(battery.temperature)
+        holder.statusText.text = if (battery.isConnected) "● Connected" else "○ Scanning..."
     }
     
     override fun getItemCount() = batteries.size
