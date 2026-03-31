@@ -2,11 +2,7 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main, master ]
-    tags:
-      - 'v*'
-  pull_request:
-    branches: [ main, master ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -28,16 +24,27 @@ jobs:
     - name: Build Release APK
       run: ./gradlew assembleRelease
     
-    - name: Upload APK
+    - name: Upload APK as Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: app-release
+        name: app-release-${{ github.sha }}
         path: app/build/outputs/apk/release/app-release-unsigned.apk
     
-    - name: Create Release
-      if: startsWith(github.ref, 'refs/tags/v')
+    - name: Get timestamp
+      id: timestamp
+      run: echo "timestamp=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+    
+    - name: Create Release with APK
       uses: softprops/action-gh-release@v1
       with:
+        tag_name: build-${{ steps.timestamp.outputs.timestamp }}
+        name: Build ${{ steps.timestamp.outputs.timestamp }}
+        body: |
+          Automated build from commit ${{ github.sha }}
+          
+          **Download the APK below to install on your Android device!**
+          
+          Changes: ${{ github.event.head_commit.message }}
         files: app/build/outputs/apk/release/app-release-unsigned.apk
         draft: false
         prerelease: false
