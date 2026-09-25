@@ -26,16 +26,24 @@ class BatteryClient(
     private var responseContinuation: CancellableContinuation<ByteArray>? = null
     
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
+    private fun hasBluetoothConnectPermission(): Boolean {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.BLUETOOTH_CONNECT
+            ) == PackageManager.PERMISSION_GRANTED
+    }
     
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    Log.d(TAG, "Connected to ${device.name}")
+                    Log.d(TAG, "Connected")
                     gatt.discoverServices()
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
-                    Log.d(TAG, "Disconnected from ${device.name}")
+                    Log.d(TAG, "Disconnected")
                     isConnected = false
                     cleanup()
                 }
@@ -168,7 +176,7 @@ class BatteryClient(
                 if (frame != null) {
                     val analogData = WattcycleProtocol.parseAnalogQuantity(frame.data)
                     
-                    if (analogData != null) {
+                    if (analogData != null && hasBluetoothConnectPermission()) {
                         val batteryData = BatteryData(
                             name = device.name ?: "Unknown",
                             address = device.address,
