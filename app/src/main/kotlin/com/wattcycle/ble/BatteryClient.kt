@@ -190,24 +190,3 @@ class BatteryClient(
         private const val TAG = "BatteryClient"
     }
 }
-
-// Add to WattcycleProtocol.kt
-data class WattFrame(
-    val version: Int,
-    val address: Int,
-    val functionCode: Int,
-    val startAddress: Int,
-    val dataLength: Int,
-    val data: ByteArray
-)
-
-data class AnalogQuantityData(
-    val soc: Int,
-    val voltage: Float,
-    val current: Float,
-    val remainingCapacity: Float,
-    val totalCapacity: Float,
-    val cellVoltages: List<Float>,
-    val mosTemperature: Float,
-    val pcbTemperature: Float
-)
