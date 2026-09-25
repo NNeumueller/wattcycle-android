@@ -12,12 +12,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.content.ContextCompat
-
 class BatteryClient(
     private val context: Context,
     private val device: BluetoothDevice,
@@ -32,14 +26,6 @@ class BatteryClient(
     private var responseContinuation: CancellableContinuation<ByteArray>? = null
     
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
-
-    private fun hasBluetoothConnectPermission(): Boolean {
-        return Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
-            ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.BLUETOOTH_CONNECT
-            ) == PackageManager.PERMISSION_GRANTED
-    }
     
     private val gattCallback = object : BluetoothGattCallback() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, newState: Int) {
@@ -170,7 +156,7 @@ class BatteryClient(
             }
         }
     }
-    
+    @SuppressLint("MissingPermission")
     private suspend fun readBatteryData() {
         try {
             // Read analog quantity
@@ -182,7 +168,7 @@ class BatteryClient(
                 if (frame != null) {
                     val analogData = WattcycleProtocol.parseAnalogQuantity(frame.data)
                     
-                    if (analogData != null && hasBluetoothConnectPermission()) {
+                    if (analogData != null) {
                         val batteryData = BatteryData(
                             name = device.name ?: "Unknown",
                             address = device.address,
