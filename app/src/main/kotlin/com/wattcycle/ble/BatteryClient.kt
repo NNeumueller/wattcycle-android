@@ -7,8 +7,10 @@ import kotlinx.coroutines.*
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.util.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
+import kotlin.coroutines.resumeWithException
 
 class BatteryClient(
     private val context: Context,
@@ -116,27 +118,30 @@ class BatteryClient(
         responseContinuation?.cancel()
         responseContinuation = null
     }
-    
-    private suspend fun sendCommand(command: ByteArray): ByteArray = suspendCoroutine { cont ->
-        if (!isConnected || writeChar == null) {
-            cont.cancel()
-            return@suspendCoroutine
-        }
-        
-        responseBuffer = ByteArray(0)
-        expectedLength = 0
-        responseContinuation = cont
-        
-        writeChar?.value = command
-        gatt?.writeCharacteristic(writeChar)
-        
-        // Timeout after 3 seconds
-        scope.launch {
-            delay(3000)
-            if (responseContinuation == cont) {
-                responseContinuation = null
-                cont.cancel(CancellationException("Response timeout"))
+
+    private suspend fun sendCommand(command: ByteArray): ByteArray =
+    withTimeout(3_000L) {
+        suspendCancellableCoroutine { cont ->
+
+            if (!isConnected || writeChar == null || gatt == null) {
+                cont.cancel(
+                    CancellationException("Bluetooth is not connected")
+                )
+                return@suspendCancellableCoroutine
             }
+
+            responseBuffer = ByteArray(0)
+            expectedLength = 0
+            responseContinuation = cont
+
+            cont.invokeOnCancellation {
+                if (responseContinuation === cont) {
+                    responseContinuation = null
+                }
+            }
+
+            writeChar?.value = command
+            gatt?.writeCharacteristic(writeChar)
         }
     }
     
